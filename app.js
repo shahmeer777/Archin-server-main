@@ -23,7 +23,7 @@ app.use('/uploads', express.static(imagesPath));
 app.use('/uploadAdminDocs', express.static(path.join(process.cwd(), 'uploadAdminDocs')));
 app.use('/uploadUserDocs', express.static(path.join(process.cwd(), 'uploadUserDocs')));
 const corsHeaders = {
-"Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Credentials": "true",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, PATCH, PUT, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, ngrok-skip-browser-warning",
@@ -47,8 +47,37 @@ db.connect().then(() => {
     // Start reminder services after server is ready
     reminder_48hrs();
     reminder_72hrs();
-    // reminder_5days();
-    // reminder_10days();
+
+    // 🚀 SELF-HEALING: Fix corrupted database records (phase_2 as string "Array()")
+    // This runs once on startup and ensures the GET /api/orders doesn't crash
+    const fixCorruptedData = async () => {
+      try {
+        const orderCollection = db.getConnection().connection.db.collection('orders');
+        const corruptedCount = await orderCollection.countDocuments({ phase_2: { $type: "string" } });
+
+        if (corruptedCount > 0) {
+          console.log(`⚠️ Found ${corruptedCount} corrupted orders with string phase_2. Fixing...`);
+          const result = await orderCollection.updateMany(
+            { phase_2: { $type: "string" } },
+            {
+              $set: {
+                phase_2: {
+                  content: {},
+                  uploaded_images_mode1: [],
+                  uploaded_images_cuisine: [],
+                  uploaded_images_chambre_oui2: [],
+                  uploaded_images_chambre2: []
+                }
+              }
+            }
+          );
+          console.log(`✅ Fixed ${result.modifiedCount} corrupted orders.`);
+        }
+      } catch (err) {
+        console.error('❌ Failed to run self-healing fix:', err.message);
+      }
+    };
+    fixCorruptedData();
   });
 }).catch(err => {
   console.error('Failed to start server:', err);

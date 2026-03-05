@@ -8,7 +8,7 @@ import { oncalendlybooked } from '../send-mail/(admin)/on-calendly-booked.js';
 import { onPhase1Complete } from '../send-mail/(admin)/on-phase1-complete.js';
 import { onNewPayment } from '../send-mail/(admin)/on-new-payment-made.js';
 import { onGeomtryProduct } from '../send-mail/(user)/on-Geomtry-product.js';
-import {sendconfirmationEmail} from '../send-mail/(user)/another-confirmation.js';
+import { sendconfirmationEmail } from '../send-mail/(user)/another-confirmation.js';
 export const getOrders = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -23,9 +23,9 @@ export const getOrders = async (req, res) => {
 
     if (orderId) {
       // Fetch single order
-      const order = await Order.findOne({orderId: orderId}).populate(populateFields).populate({
-          path: "userId", // alias field in schema
-          model: "User",
+      const order = await Order.findOne({ orderId: orderId }).populate(populateFields).populate({
+        path: "userId", // alias field in schema
+        model: "User",
         localField: "userId",  // field in Order
         foreignField: "userId", // field in User
         justOne: true
@@ -41,10 +41,10 @@ export const getOrders = async (req, res) => {
       .populate({
         path: "userId", // alias field in schema
         model: "User",
-    localField: "userId",  // field in Order
-    foreignField: "userId", // field in User
-    justOne: true
-  }).sort({ createdAt: -1 }); // newest first;
+        localField: "userId",  // field in Order
+        foreignField: "userId", // field in User
+        justOne: true
+      }).sort({ createdAt: -1 }); // newest first;
     return res.status(200).json({ orders });
 
   } catch (error) {
@@ -81,7 +81,7 @@ export const deleteOrder = async (req, res) => {
     await UploadedImage.deleteMany({ _id: { $in: order.uploaded_images } });
 
     // Remove order from DB
-  //  await Order.deleteOne({ orderId: Number(orderId) });
+    //  await Order.deleteOne({ orderId: Number(orderId) });
 
     return res.json({ message: 'Order and related files deleted successfully' });
 
@@ -191,14 +191,14 @@ export const submitOrder = async (req, res) => {
       // WooCommerce order
       orderId: wooOrderData?.orderId || 0,
       status: wooOrderData?.status || "",
-      total: wooOrderData?.total ||  totalBudgetEstimate || "",
+      total: wooOrderData?.total || totalBudgetEstimate || "",
       currency: wooOrderData?.currency || "",
       date: wooOrderData?.date || null,
       billing: wooOrderData?.billing || {},
       items: wooOrderData?.items || []
     });
-  await onPhase1Complete(existingUser, savedOrder);
-  await sendconfirmationEmail(savedOrder);
+    await onPhase1Complete(existingUser, savedOrder);
+    await sendconfirmationEmail(savedOrder);
     // 4️⃣ Send success response
     res.status(201).json({
       message: "Order created successfully",
@@ -236,25 +236,36 @@ export const updateOrder = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "Order not found" });
     }
- 
-     // 3️⃣ Find order
+
+    // 3️⃣ Find order
     const order = await Order.findOne({ userId: Number(user.userId) });
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
-    // ensure phase_2 exists
-    if (!order.phase_2) order.phase_2 = {};
+    // 🚀 Robust fix for phase_2 data corruption
+    // Ensure phase_2 is a valid object before proceeding
+    if (!order.phase_2 || typeof order.phase_2 !== "object" || Array.isArray(order.phase_2)) {
+      order.phase_2 = {
+        content: {},
+        uploaded_images_mode1: [],
+        uploaded_images_cuisine: [],
+        uploaded_images_chambre_oui2: [],
+        uploaded_images_chambre2: []
+      };
+    }
 
-    // only merge into `content`
-    if (!order.phase_2.content) order.phase_2.content = {};
+    // Ensure phase_2.content is a valid object
+    if (!order.phase_2.content || typeof order.phase_2.content !== "object" || Array.isArray(order.phase_2.content)) {
+      order.phase_2.content = {};
+    }
 
     Object.keys(phase_2).forEach(key => {
-      order.phase_2.content[key] = phase_2[key]; // Update or add keys
+      order.phase_2.content[key] = phase_2[key];
     });
 
     const savedOrder = await order.save();
-  await sendPhase2Email(user.userId, phase_2?.content?.calendlyEvent?.event?.uri);
-  await oncalendlybooked(order.orderId, phase_2?.content?.calendlyEvent?.event?.uri);
+    await sendPhase2Email(user.userId, phase_2?.content?.calendlyEvent?.event?.uri);
+    await oncalendlybooked(order.orderId, phase_2?.content?.calendlyEvent?.event?.uri);
     res.status(200).json({
       message: "Phase 2 details updated successfully",
       order: savedOrder
@@ -305,7 +316,7 @@ export const updatePaymentDetail = async (req, res) => {
       (item) => Number(item.product_id) === 12751
     );
     if (!hasGeometryProduct) {
-    await onGeomtryProduct(existingUser);
+      await onGeomtryProduct(existingUser);
     }
     await onNewPayment(existingUser, savedOrder);
     // ✅ Success response
@@ -372,7 +383,7 @@ export const getIsFinalizedUser = (req, res) =>
 
 const deepMerge = (target, source) => {
   const output = { ...target };
-  
+
   if (isObject(target) && isObject(source)) {
     Object.keys(source).forEach(key => {
       if (isObject(source[key])) {
@@ -386,7 +397,7 @@ const deepMerge = (target, source) => {
       }
     });
   }
-  
+
   return output;
 };
 
@@ -402,48 +413,48 @@ export const updateOrderPhase2 = async (req, res) => {
     // ✅ 1. Validate orderId
     const parsedOrderId = Number(orderId);
     if (isNaN(parsedOrderId) || parsedOrderId <= 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Invalid orderId. Must be a positive number." 
+        message: "Invalid orderId. Must be a positive number."
       });
     }
 
     // ✅ 2. Validate phase_2 data
     if (!phase_2 || typeof phase_2 !== "object" || Array.isArray(phase_2)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "phase_2 must be a valid object with keys/values to update." 
+        message: "phase_2 must be a valid object with keys/values to update."
       });
     }
 
     // Check if phase_2 is empty
     if (Object.keys(phase_2).length === 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "phase_2 cannot be empty. Provide at least one field to update." 
+        message: "phase_2 cannot be empty. Provide at least one field to update."
       });
     }
 
     // ✅ 3. Find user
     const user = await User.findOne({ userId: parsedOrderId });
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: `User with orderId ${parsedOrderId} not found.` 
+        message: `User with orderId ${parsedOrderId} not found.`
       });
     }
 
     // ✅ 4. Find order
     const order = await Order.findOne({ userId: user.userId });
     if (!order) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: `Order not found for userId ${user.userId}.` 
+        message: `Order not found for userId ${user.userId}.`
       });
     }
 
-    // ✅ 5. Initialize phase_2 structure if it doesn't exist
-    if (!order.phase_2) {
+    // ✅ 5. Initialize phase_2 structure if it doesn't exist or is corrupted
+    if (!order.phase_2 || typeof order.phase_2 !== "object" || Array.isArray(order.phase_2)) {
       order.phase_2 = {
         content: {},
         uploaded_images_mode1: [],
@@ -453,8 +464,8 @@ export const updateOrderPhase2 = async (req, res) => {
       };
     }
 
-    // Ensure content object exists
-    if (!order.phase_2.content) {
+    // Ensure content object exists and is not a string/array
+    if (!order.phase_2.content || typeof order.phase_2.content !== "object" || Array.isArray(order.phase_2.content)) {
       order.phase_2.content = {};
     }
 
@@ -470,11 +481,11 @@ export const updateOrderPhase2 = async (req, res) => {
 
     // ✅ 8. Send email notification if Calendly event exists
     // Check multiple possible locations for calendlyEvent
-    const calendlyEventUri = 
-      phase_2?.calendlyEvent?.event?.uri || 
+    const calendlyEventUri =
+      phase_2?.calendlyEvent?.event?.uri ||
       phase_2?.userJourney?.calendlyEvent?.event?.uri ||
       order.phase_2.content?.calendlyEvent?.event?.uri;
-    
+
     if (calendlyEventUri) {
       try {
         await Promise.all([
@@ -495,28 +506,28 @@ export const updateOrderPhase2 = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Update Phase 2 Error:", error);
-    
+
     // Handle specific Mongoose errors
     if (error.name === 'ValidationError') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Validation error", 
-        errors: Object.values(error.errors).map(e => e.message) 
+        message: "Validation error",
+        errors: Object.values(error.errors).map(e => e.message)
       });
     }
 
     if (error.name === 'CastError') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Invalid data type provided" 
+        message: "Invalid data type provided"
       });
     }
 
     // Generic server error
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Server error occurred while updating order", 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined 
+      message: "Server error occurred while updating order",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
